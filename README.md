@@ -26,10 +26,20 @@ GitHub Pages 等の静的ホスティングだけで動作する **単一HTMLフ
 - **エラスティック・ウォール**: 4秒間、左右の壁で強制バウンド
 - **スモーク・チルト**: 視界を黒く覆う（端末を振るか Space連打で解除）
 
-## 🚀 デプロイ
+## 🚀 デプロイ（GitHub Pages）
 
-このリポジトリの `index.html` をそのまま GitHub Pages で公開するだけで動きます。
-サーバーサイドは不要、外部ライブラリは CDN から読み込みます。
+1. GitHub の Repository → **Settings → Pages**
+2. **Source**: `Deploy from a branch`
+3. **Branch**: `sinsaku2` / `root` を選択して Save
+4. しばらくすると `https://<your-name>.github.io/sinsaku2/` で公開されます
+
+サーバーサイドは不要。外部ライブラリ（PeerJS）はCDNから読み込みます。
+`.nojekyll` を同梱しているのでアセットの取りこぼしもありません。
+
+> 📱 **スマホで遊ぶ場合のメモ**
+> - iOS Safari では「READY」ボタン押下時にジャイロセンサーの許可ダイアログが出ます。
+> - PeerJS の公式シグナリングサーバを使うため、ふたりとも **HTTPS** でアクセスしてください
+>   （GitHub Pages なら最初からHTTPSです）。
 
 ## 📝 ライセンス
 
