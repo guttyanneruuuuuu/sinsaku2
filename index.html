@@ -470,6 +470,46 @@ body[data-mode="solo"] .solo-only{ display:block; }
 .smoke-help .big{ font-size: 16px; color: var(--purple); display:block; margin-bottom: 2px;}
 .smoke-help .count{ font-variant-numeric: tabular-nums; color: var(--accent); }
 
+/* PiP ミニビュー（右上に相手の画面を縮小表示） */
+.pip-wrap{
+  position:absolute; right: 14px; top: 56px;
+  width: 100px; height: 150px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: var(--shadow-card), 0 0 0 2px rgba(255,140,66,0.4);
+  overflow:hidden;
+  pointer-events:none;
+  border: 1px solid #ffd1b2;
+}
+.pip-wrap canvas{ width:100%; height:100%; display:block; }
+.pip-label{
+  position:absolute; left: 4px; top: 2px;
+  font-size: 9px; font-weight: 800; letter-spacing:.1em;
+  color: var(--accent);
+  background: rgba(255,255,255,0.9);
+  border-radius: 4px;
+  padding: 1px 5px;
+  pointer-events:none;
+}
+.pip-dist{
+  position:absolute; right: 4px; bottom: 2px;
+  font-size: 10px; font-weight: 800; color: var(--ink-1);
+  background: rgba(255,255,255,0.9);
+  border-radius: 4px;
+  padding: 1px 5px; pointer-events:none;
+  font-variant-numeric: tabular-nums;
+}
+.pip-hp{
+  position:absolute; left: 4px; bottom: 2px;
+  display:flex; gap:1px;
+}
+.pip-hp .heart{
+  width:8px; height:8px; border-radius:50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 1px #fff;
+}
+.pip-hp .heart.lost{ background:#d6e2ef; }
+
 /* 通知トースト */
 .toast-wrap{
   position:absolute; left:0; right:0; top: 96px;
@@ -714,6 +754,14 @@ body[data-mode="solo"] .solo-only{ display:block; }
         </div>
 
         <div class="debuff-tags" id="debuff-tags"></div>
+
+        <!-- 相手の画面（PiP・右上） -->
+        <div class="pip-wrap" id="pip-wrap">
+          <div class="pip-label">RIVAL</div>
+          <canvas id="pip-canvas"></canvas>
+          <div class="pip-hp" id="pip-hp"></div>
+          <div class="pip-dist" id="pip-dist">0m</div>
+        </div>
 
         <div class="smoke-help" id="smoke-help" style="display:none;">
           <span class="big">📵 視界泥棒！</span>
@@ -1047,6 +1095,33 @@ function onData(msg){
       updateProgressBars();
       break;
     }
+    case 'POS_SYNC': {
+      // 相手の位置(相対座標) → 自分のマップ座標に変換
+      const x = (msg.x != null ? msg.x : 0.5) * Game.W;
+      OpGhost.x = x;
+      OpGhost.y = Game.H * 0.7; // 相手は少し上のY軸に固定描画（自分と区別）
+      OpGhost.vx = (msg.vx || 0) * 400;
+      OpGhost.hp = (msg.hp != null) ? msg.hp : OpGhost.hp;
+      OpGhost.reverseTimer = msg.r ? 1 : 0;
+      OpGhost.elasticTimer = msg.e ? 1 : 0;
+      OpGhost.smokeActive = !!msg.s;
+      OpGhost.invincible = msg.inv ? 1 : 0;
+      OpGhost.lastUpdate = performance.now();
+      updatePipHpUI();
+      break;
+    }
+    case 'WORLD_SYNC': {
+      // 相手側の障害物・アイテムを軽量に同期（PiP描画用）
+      OpGhost.obstacles = (msg.o || []).map(a => ({
+        x: a[0] * Game.W, y: a[1] * Game.H,
+        w: a[2] * Game.W, h: a[3] * Game.H,
+        color: a[4],
+      }));
+      OpGhost.items = (msg.i || []).map(a => ({
+        x: a[0] * Game.W, y: a[1] * Game.H, color: a[2],
+      }));
+      break;
+    }
     case 'HIJACK': {
       receiveHijack(msg.kind);
       break;
@@ -1222,6 +1297,28 @@ function startCountdown(){
 const canvas = $('#game-canvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
+// PiP（右上ミニビュー）
+const pipCanvas = $('#pip-canvas');
+const pipCtx = pipCanvas.getContext('2d', { alpha: false });
+
+// 相手プレイヤーの「自分のマップ上での位置」(ゴースト描画用)
+// Online: 相手から POS_SYNC を受信、 AI: AI.player をそのまま利用
+const OpGhost = {
+  visible: false,
+  x: 180, y: 480,
+  vx: 0,
+  hp: 3,
+  invincible: 0,
+  lastUpdate: 0,
+  reverseTimer: 0,
+  elasticTimer: 0,
+  smokeActive: false,
+  // 相手の世界（PiP 用）
+  obstacles: [],
+  items: [],
+  scrollSpeed: 4,
+};
+
 const Game = {
   running: false,
   startTime: 0,
@@ -1242,6 +1339,7 @@ const Game = {
     targetVx: 0,
     invincible: 0,       // 残り時間（秒）
     blink: 0,
+    hp: 3,               // ライフ（直接攻撃で減る）
   },
 
   // world
@@ -1274,6 +1372,11 @@ const Game = {
 
   // 距離同期
   lastSyncTime: 0,
+  lastPosSyncTime: 0,
+  lastWorldSyncTime: 0,
+  // PiP サイズ（resizeCanvas で更新）
+  PIP_W: 100,
+  PIP_H: 150,
 
   // shake detection
   lastAcc: null,
@@ -1293,6 +1396,17 @@ function resizeCanvas(){
   canvas.style.height = h + 'px';
   Game.W = w; Game.H = h; Game.dpr = dpr;
   ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  // PiP リサイズ
+  const pipRect = $('#pip-wrap').getBoundingClientRect();
+  const pw = Math.max(60, Math.floor(pipRect.width));
+  const ph = Math.max(90, Math.floor(pipRect.height));
+  pipCanvas.width = Math.floor(pw * dpr);
+  pipCanvas.height = Math.floor(ph * dpr);
+  pipCanvas.style.width = pw + 'px';
+  pipCanvas.style.height = ph + 'px';
+  pipCtx.setTransform(dpr,0,0,dpr,0,0);
+  Game.PIP_W = pw; Game.PIP_H = ph;
 }
 
 function initStars(){
@@ -1333,6 +1447,8 @@ function startGame(){
   Game.player.targetVx = 0;
   Game.player.invincible = 0;
   Game.player.blink = 0;
+  Game.player.hp = 3;
+  Game.lastPosSyncTime = 0;
 
   Game.reverseTimer = 0;
   Game.elasticTimer = 0;
@@ -1357,11 +1473,43 @@ function startGame(){
   $('#smoke-help').style.display = 'none';
   updateDebuffTags();
 
+  // 相手ゴースト初期化
+  OpGhost.visible = (State.mode !== 'solo');
+  OpGhost.x = Game.W / 2;
+  OpGhost.y = Game.H * 0.8;
+  OpGhost.vx = 0;
+  OpGhost.hp = 3;
+  OpGhost.invincible = 0;
+  OpGhost.lastUpdate = performance.now();
+  OpGhost.reverseTimer = 0;
+  OpGhost.elasticTimer = 0;
+  OpGhost.smokeActive = false;
+  OpGhost.obstacles = [];
+  OpGhost.items = [];
+  OpGhost.scrollSpeed = 4;
+
+  // PiP 表示制御
+  $('#pip-wrap').style.display = (State.mode === 'solo') ? 'none' : 'block';
+  updatePipHpUI();
+
   // iOS のジャイロ許可（ユーザ操作内で呼ばないと出ない）
   requestMotionPermissionIfNeeded();
 
   cancelAnimationFrame(Game.rafId);
   Game.rafId = requestAnimationFrame(gameLoop);
+}
+
+function updatePipHpUI(){
+  const wrap = $('#pip-hp');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const hpMax = 3;
+  const hp = OpGhost.hp;
+  for (let i=0;i<hpMax;i++){
+    const d = document.createElement('div');
+    d.className = 'heart' + (i >= hp ? ' lost' : '');
+    wrap.appendChild(d);
+  }
 }
 
 function endGame(){
@@ -1784,10 +1932,57 @@ function updateDistance(dt){
 }
 
 function syncDistanceIfNeeded(now){
+  // 距離同期は 0.5 秒ごと
   if (now - Game.lastSyncTime > 500){
     Game.lastSyncTime = now;
-    send({ type:'DISTANCE_SYNC', d: Math.floor(State.meDistance) });
+    if (State.mode === 'online'){
+      send({ type:'DISTANCE_SYNC', d: Math.floor(State.meDistance) });
+    }
     updateProgressBars();
+  }
+  // 位置同期は 50ms ごと（20Hz） — オンラインのみ
+  if (State.mode === 'online' && (now - (Game.lastPosSyncTime||0) > 50)){
+    Game.lastPosSyncTime = now;
+    // 相対座標（0..1）で送る — 受信側の Canvas サイズが異なっても対応
+    send({
+      type: 'POS_SYNC',
+      x: Game.player.x / Game.W,
+      vx: Game.player.vx / 400,
+      hp: Game.player.hp != null ? Game.player.hp : 3,
+      r: Game.reverseTimer > 0 ? 1 : 0,
+      e: Game.elasticTimer > 0 ? 1 : 0,
+      s: Game.smokeActive ? 1 : 0,
+      inv: Game.player.invincible > 0 ? 1 : 0,
+    });
+  }
+  // ワールド同期は 350ms ごと（軽量化のため抜粋）— オンラインのみ
+  if (State.mode === 'online' && (now - (Game.lastWorldSyncTime||0) > 350)){
+    Game.lastWorldSyncTime = now;
+    const obs = [];
+    for (const o of Game.obstacles){
+      if (o.y > -40 && o.y < Game.H + 40){
+        obs.push([
+          +(o.x / Game.W).toFixed(3),
+          +(o.y / Game.H).toFixed(3),
+          +(o.w / Game.W).toFixed(3),
+          +(o.h / Game.H).toFixed(3),
+          o.color || '#1d7ad8',
+        ]);
+        if (obs.length >= 8) break;
+      }
+    }
+    const its = [];
+    for (const it of Game.items){
+      if (it.y > -40 && it.y < Game.H + 40){
+        its.push([
+          +(it.x / Game.W).toFixed(3),
+          +(it.y / Game.H).toFixed(3),
+          it.color || '#7a5af8',
+        ]);
+        if (its.length >= 4) break;
+      }
+    }
+    send({ type: 'WORLD_SYNC', o: obs, i: its });
   }
 }
 
@@ -1879,6 +2074,9 @@ function draw(){
   }
   ctx.globalAlpha = 1;
 
+  // 相手ゴースト（同じマップに半透明で表示）
+  drawOpGhost();
+
   // 自機
   drawPlayer();
 
@@ -1900,6 +2098,178 @@ function draw(){
   if (Game.smokeActive){
     drawSmoke();
   }
+
+  // PiP 描画
+  if (State.mode !== 'solo'){
+    drawPiP();
+  }
+}
+
+// ========== Op ghost (同じマップに描画される相手) ==========
+function drawOpGhost(){
+  if (!OpGhost.visible) return;
+  // AI モードでは AI.player の位置を反映（自分の世界に重ねて表示）
+  let gx, gy, gvx, ghp, ginv;
+  if (State.mode === 'ai'){
+    // CPU の相対 x をこちらの座標系に投影、y は固定（プレイヤーより少し上）
+    gx = AI.player.x;
+    gy = Game.H * 0.7;
+    gvx = AI.player.vx;
+    ghp = AI.player.hp;
+    ginv = AI.player.invincible > 0;
+  } else if (State.mode === 'online'){
+    gx = OpGhost.x;
+    gy = Game.H * 0.7;
+    gvx = OpGhost.vx;
+    ghp = OpGhost.hp;
+    ginv = OpGhost.invincible > 0;
+  } else {
+    return;
+  }
+
+  // ゴーストは半透明＋オレンジ系
+  ctx.save();
+  ctx.globalAlpha = ginv ? 0.35 : 0.55;
+  ctx.translate(gx, gy);
+
+  // 影
+  ctx.fillStyle = 'rgba(255,140,66,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(0, 18, 14, 4, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // 進行傾き
+  const tilt = Math.max(-0.4, Math.min(0.4, gvx / 400));
+  ctx.rotate(tilt);
+
+  // 本体（オレンジ系の宇宙船）
+  const r = 16;
+  const grd = ctx.createLinearGradient(0, -r, 0, r);
+  grd.addColorStop(0, '#ffd1b2');
+  grd.addColorStop(1, '#ff8c42');
+  ctx.fillStyle = grd;
+  ctx.strokeStyle = '#cc6a1f';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -r - 4);
+  ctx.lineTo(r, r);
+  ctx.lineTo(0, r - 4);
+  ctx.lineTo(-r, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // コックピット
+  ctx.fillStyle = '#0d2138';
+  ctx.beginPath();
+  ctx.arc(0, -2, r*0.35, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // RIVAL ラベル
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,140,66,0.85)';
+  ctx.font = 'bold 9px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('RIVAL', gx, gy - 28);
+  ctx.restore();
+}
+
+// ========== PiP 描画 (相手の世界をミニビューに) ==========
+function drawPiP(){
+  const w = Game.PIP_W || 100;
+  const h = Game.PIP_H || 150;
+
+  // 背景
+  pipCtx.fillStyle = '#eaf4ff';
+  pipCtx.fillRect(0,0,w,h);
+  // ラインガイド
+  pipCtx.strokeStyle = 'rgba(29,122,216,0.10)';
+  pipCtx.lineWidth = 1;
+  pipCtx.setLineDash([3,4]);
+  for (let i=1;i<3;i++){
+    pipCtx.beginPath();
+    pipCtx.moveTo(w*i/3, 0);
+    pipCtx.lineTo(w*i/3, h);
+    pipCtx.stroke();
+  }
+  pipCtx.setLineDash([]);
+
+  // データソースを決定
+  let obstacles = [], items = [], px = w/2, py = h*0.8, scale = 1;
+  let reverseOn = false, smokeOn = false;
+  let oppDistance = 0;
+
+  if (State.mode === 'ai'){
+    // CPU の世界を描画
+    obstacles = AI.obstacles;
+    items = AI.items;
+    px = (AI.player.x / Game.W) * w;
+    py = h * 0.8;
+    scale = w / Game.W;
+    reverseOn = AI.reverseTimer > 0;
+    smokeOn = AI.smokeActive;
+    oppDistance = AI.distance;
+  } else if (State.mode === 'online'){
+    obstacles = OpGhost.obstacles; // 通信負荷を避けるため空でもよい
+    items = OpGhost.items;
+    px = (OpGhost.x / Game.W) * w;
+    py = h * 0.8;
+    scale = w / Game.W;
+    reverseOn = OpGhost.reverseTimer > 0;
+    smokeOn = OpGhost.smokeActive;
+    oppDistance = State.opDistance;
+  }
+
+  // リバース中は上下反転
+  pipCtx.save();
+  if (reverseOn){
+    pipCtx.translate(0, h);
+    pipCtx.scale(1, -1);
+  }
+
+  // 障害物（簡略表示）
+  for (const o of obstacles){
+    const sx = (o.x / Game.W) * w;
+    const sy = (o.y / Game.H) * h;
+    const sw = (o.w || 24) * scale;
+    const sh = (o.h || 24) * scale;
+    pipCtx.fillStyle = o.color || '#1d7ad8';
+    pipCtx.fillRect(sx - sw/2, sy - sh/2, sw, sh);
+  }
+  // アイテム
+  for (const it of items){
+    const sx = (it.x / Game.W) * w;
+    const sy = (it.y / Game.H) * h;
+    pipCtx.fillStyle = it.color || '#7a5af8';
+    pipCtx.beginPath();
+    pipCtx.arc(sx, sy, 3, 0, Math.PI*2);
+    pipCtx.fill();
+  }
+  // 相手プレイヤー（PiP の中ではメインキャラなのでオレンジで強めに）
+  pipCtx.fillStyle = '#ff8c42';
+  pipCtx.beginPath();
+  pipCtx.arc(px, py, 4, 0, Math.PI*2);
+  pipCtx.fill();
+  pipCtx.strokeStyle = '#cc6a1f';
+  pipCtx.lineWidth = 1;
+  pipCtx.stroke();
+
+  pipCtx.restore();
+
+  // スモーク中は黒く覆う
+  if (smokeOn){
+    pipCtx.fillStyle = 'rgba(20,10,40,0.85)';
+    pipCtx.fillRect(0,0,w,h);
+    pipCtx.fillStyle = '#fff';
+    pipCtx.font = 'bold 9px -apple-system, sans-serif';
+    pipCtx.textAlign = 'center';
+    pipCtx.fillText('SMOKE', w/2, h/2);
+  }
+
+  // 距離表示
+  $('#pip-dist').textContent = Math.floor(oppDistance) + 'm';
 }
 
 function drawObstacle(o){
