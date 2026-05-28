@@ -398,6 +398,22 @@ body[data-mode="solo"] .solo-only{ display:block; }
   background:
     linear-gradient(180deg, #eaf4ff 0%, #d3e7fb 100%);
 }
+#game-wrap::before{
+  content:"";
+  position:absolute; inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(50% 35% at 50% 6%, rgba(255,255,255,0.55), rgba(255,255,255,0)),
+    linear-gradient(180deg, rgba(61,169,252,0.08) 0%, rgba(255,255,255,0) 36%, rgba(13,33,56,0.10) 100%);
+  z-index: 1;
+}
+#game-wrap::after{
+  content:"";
+  position:absolute; inset:0;
+  pointer-events:none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55), inset 0 -24px 40px rgba(13,33,56,0.12);
+  z-index: 1;
+}
 #game-canvas{
   position:absolute; inset:0;
   width:100%; height:100%;
@@ -411,10 +427,50 @@ body[data-mode="solo"] .solo-only{ display:block; }
   display:flex; justify-content: space-between; align-items: flex-start;
   pointer-events:none;
   font-weight: 700;
+  z-index: 2;
 }
 .hud .left, .hud .right{ background: rgba(255,255,255,0.85); border-radius: 12px; padding: 6px 10px; box-shadow: var(--shadow-soft);}
 .hud .time{ font-size: 22px; color: var(--ink-1); font-variant-numeric: tabular-nums;}
 .hud .dist{ font-size: 12px; color: var(--ink-3);}
+
+.gyro-panel{
+  position:absolute; left:50%; top: 74px; transform: translateX(-50%);
+  width: min(56vw, 220px);
+  background: rgba(255,255,255,0.86);
+  border: 1px solid rgba(29,122,216,0.22);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  padding: 6px 8px 8px;
+  pointer-events:none;
+  z-index: 2;
+}
+.gyro-title{
+  font-size: 9px; letter-spacing: .14em; font-weight: 900; color: var(--primary-dark);
+}
+.gyro-bars{ margin-top: 4px; display:grid; gap:4px; }
+.gyro-bar{ display:grid; grid-template-columns: 14px 1fr; align-items:center; gap:4px; }
+.gyro-bar > span{
+  font-size: 10px; font-weight: 900; color: var(--ink-2); text-align:center;
+}
+.gyro-bar .track{
+  position: relative; height: 7px; border-radius: 999px;
+  background: rgba(13,33,56,0.10);
+  overflow: hidden;
+}
+.gyro-bar .fill{
+  position:absolute; left:50%; top:0; bottom:0;
+  width: 0%;
+  transform: translateX(-50%);
+  border-radius:999px;
+  background: linear-gradient(90deg, #1d7ad8, #3da9fc);
+  transition: width .12s ease-out;
+}
+.gyro-bar .fill.depth{
+  background: linear-gradient(90deg, #ff8c42, #ffd166);
+}
+.gyro-tip{
+  margin-top:4px; font-size: 9px; color: var(--ink-3); letter-spacing: .08em;
+}
 
 /* 進捗バー（左右） */
 .progress-rail{
@@ -453,6 +509,7 @@ body[data-mode="solo"] .solo-only{ display:block; }
 .debuff-tag.reverse{ background: var(--pink); }
 .debuff-tag.elastic{ background: var(--green); }
 .debuff-tag.smoke{ background: var(--purple); }
+.debuff-tag.assist{ background: var(--primary-dark); }
 
 /* スモーク解除 UI */
 .smoke-help{
@@ -480,6 +537,7 @@ body[data-mode="solo"] .solo-only{ display:block; }
   overflow:hidden;
   pointer-events:none;
   border: 1px solid #ffd1b2;
+  z-index: 2;
 }
 .pip-wrap canvas{ width:100%; height:100%; display:block; }
 .pip-label{
@@ -514,6 +572,7 @@ body[data-mode="solo"] .solo-only{ display:block; }
 .toast-wrap{
   position:absolute; left:0; right:0; top: 96px;
   display:flex; justify-content:center; pointer-events:none;
+  z-index: 2;
 }
 .toast{
   background:#fff; border-radius: 12px;
@@ -708,7 +767,7 @@ body[data-mode="solo"] .solo-only{ display:block; }
       </div>
 
       <div class="lobby-hint">
-        スマホは端末を <b>左右に傾けて操作</b>。<br>
+        スマホは端末を <b>左右＋前後に傾けて操作</b>。<br>
         妨害「視界泥棒（黒い画面）」を受けたら、<b>端末を振る</b>か <b>Spaceを5回連打</b> で解除！
       </div>
 
@@ -742,6 +801,21 @@ body[data-mode="solo"] .solo-only{ display:block; }
             <div class="time" id="hud-dist">0m</div>
             <div class="dist">距離</div>
           </div>
+        </div>
+
+        <div class="gyro-panel" id="gyro-panel">
+          <div class="gyro-title">GYRO MOVE</div>
+          <div class="gyro-bars">
+            <div class="gyro-bar">
+              <span>X</span>
+              <div class="track"><div class="fill" id="gyro-x-fill"></div></div>
+            </div>
+            <div class="gyro-bar">
+              <span>Z</span>
+              <div class="track"><div class="fill depth" id="gyro-z-fill"></div></div>
+            </div>
+          </div>
+          <div class="gyro-tip">左右 + 前後で機体移動</div>
         </div>
 
         <div class="progress-rail me">
@@ -1098,9 +1172,12 @@ function onData(msg){
     case 'POS_SYNC': {
       // 相手の位置(相対座標) → 自分のマップ座標に変換
       const x = (msg.x != null ? msg.x : 0.5) * Game.W;
+      const y = (msg.y != null ? msg.y : 0.8) * Game.H;
       OpGhost.x = x;
-      OpGhost.y = Game.H * 0.7; // 相手は少し上のY軸に固定描画（自分と区別）
+      OpGhost.y = y;
       OpGhost.vx = (msg.vx || 0) * 400;
+      OpGhost.vy = (msg.vy || 0) * 260;
+      OpGhost.depth = (msg.z != null) ? msg.z : 0;
       OpGhost.hp = (msg.hp != null) ? msg.hp : OpGhost.hp;
       OpGhost.reverseTimer = msg.r ? 1 : 0;
       OpGhost.elasticTimer = msg.e ? 1 : 0;
@@ -1306,7 +1383,8 @@ const pipCtx = pipCanvas.getContext('2d', { alpha: false });
 const OpGhost = {
   visible: false,
   x: 180, y: 480,
-  vx: 0,
+  vx: 0, vy: 0,
+  depth: 0,
   hp: 3,
   invincible: 0,
   lastUpdate: 0,
@@ -1334,8 +1412,12 @@ const Game = {
   // player
   player: {
     x: 180, y: 520,
+    baseY: 520,
+    vy: 0,
     vx: 0,
+    targetVy: 0,
     radius: 16,
+    depth: 0,
     targetVx: 0,
     invincible: 0,       // 残り時間（秒）
     blink: 0,
@@ -1364,11 +1446,13 @@ const Game = {
   smokeReleaseNeeded: 2, // シェイク or 5回連打
 
   // input
-  keys: { left:false, right:false },
+  keys: { left:false, right:false, up:false, down:false },
   tilt: 0,               // -1..1 ジャイロ
+  tiltDepth: 0,          // -1..1 (前後)
 
   // 妨害クールダウン（連発防止）
   hijackCooldown: 0,
+  assistTimer: 0,
 
   // 距離同期
   lastSyncTime: 0,
@@ -1382,6 +1466,7 @@ const Game = {
   lastAcc: null,
   shakeCount: 0,
   spaceCount: 0,
+  speedLines: [],
 };
 
 function resizeCanvas(){
@@ -1407,6 +1492,11 @@ function resizeCanvas(){
   pipCanvas.style.height = ph + 'px';
   pipCtx.setTransform(dpr,0,0,dpr,0,0);
   Game.PIP_W = pw; Game.PIP_H = ph;
+
+  Game.player.baseY = Game.H * 0.8;
+  const minY = Game.H * 0.62;
+  const maxY = Game.H * 0.9;
+  Game.player.y = Math.max(minY, Math.min(maxY, Game.player.y || Game.player.baseY));
 }
 
 function initStars(){
@@ -1423,10 +1513,26 @@ function initStars(){
   }
 }
 
+function initSpeedLines(){
+  Game.speedLines.length = 0;
+  const n = 30;
+  for (let i=0;i<n;i++){
+    Game.speedLines.push({
+      x: Math.random()*Game.W,
+      y: Math.random()*Game.H,
+      len: 10 + Math.random()*26,
+      w: 1 + Math.random()*1.3,
+      s: 0.4 + Math.random()*0.9,
+      a: 0.1 + Math.random()*0.35,
+    });
+  }
+}
+
 function startGame(){
   showScreen('game');
   resizeCanvas();
   initStars();
+  initSpeedLines();
 
   Game.running = true;
   Game.startTime = performance.now();
@@ -1442,13 +1548,23 @@ function startGame(){
   Game.particles = [];
 
   Game.player.x = Game.W / 2;
-  Game.player.y = Game.H * 0.8;
+  Game.player.baseY = Game.H * 0.8;
+  Game.player.y = Game.player.baseY;
+  Game.player.vy = 0;
   Game.player.vx = 0;
   Game.player.targetVx = 0;
+  Game.player.targetVy = 0;
+  Game.player.depth = 0;
   Game.player.invincible = 0;
   Game.player.blink = 0;
   Game.player.hp = 3;
   Game.lastPosSyncTime = 0;
+  Game.tilt = 0;
+  Game.tiltDepth = 0;
+  Game.keys.left = false;
+  Game.keys.right = false;
+  Game.keys.up = false;
+  Game.keys.down = false;
 
   Game.reverseTimer = 0;
   Game.elasticTimer = 0;
@@ -1459,6 +1575,7 @@ function startGame(){
   Game.spaceCount = 0;
 
   Game.hijackCooldown = 0;
+  Game.assistTimer = 0;
   Game.lastSyncTime = 0;
   Game.lastAcc = null;
   Game.shakeCount = 0;
@@ -1478,6 +1595,8 @@ function startGame(){
   OpGhost.x = Game.W / 2;
   OpGhost.y = Game.H * 0.8;
   OpGhost.vx = 0;
+  OpGhost.vy = 0;
+  OpGhost.depth = 0;
   OpGhost.hp = 3;
   OpGhost.invincible = 0;
   OpGhost.lastUpdate = performance.now();
@@ -1670,31 +1789,52 @@ function updateTimers(dt){
     }
   }
   if (Game.hijackCooldown > 0) Game.hijackCooldown -= dt;
+  if (Game.assistTimer > 0){
+    Game.assistTimer -= dt;
+    if (Game.assistTimer <= 0){
+      Game.assistTimer = 0;
+      toast('アシスト解除');
+      updateDebuffTags();
+    }
+  }
 }
 
 // ---------- Input ----------
 function updateInput(dt){
   // PCキー
-  let target = 0;
+  let targetX = 0;
   const left  = Game.keys.left;
   const right = Game.keys.right;
-  if (left && !right) target = -1;
-  else if (right && !left) target = 1;
+  if (left && !right) targetX -= 1;
+  else if (right && !left) targetX += 1;
 
-  // ジャイロ（gamma: -90..90 を -1..1 にクランプ）
-  if (target === 0 && Math.abs(Game.tilt) > 0.05){
-    target = Math.max(-1, Math.min(1, Game.tilt));
+  // ジャイロ（横）
+  if (Math.abs(Game.tilt) > 0.04){
+    targetX += Math.max(-1, Math.min(1, Game.tilt)) * 0.95;
   }
+  targetX = Math.max(-1, Math.min(1, targetX));
+
+  // ジャイロ（前後）
+  let targetY = 0;
+  const up = Game.keys.up;
+  const down = Game.keys.down;
+  if (up && !down) targetY -= 1;
+  else if (down && !up) targetY += 1;
+  if (Math.abs(Game.tiltDepth) > 0.04){
+    targetY += Math.max(-1, Math.min(1, Game.tiltDepth)) * 0.95;
+  }
+  targetY = Math.max(-1, Math.min(1, targetY));
 
   // リバース時は左右反転
-  if (Game.reverseTimer > 0) target = -target;
+  if (Game.reverseTimer > 0) targetX = -targetX;
 
   // エラスティック中は通常入力を弱める
   if (Game.elasticLocked){
-    target *= 0.0;
+    targetX *= 0.0;
   }
 
-  Game.player.targetVx = target;
+  Game.player.targetVx = targetX;
+  Game.player.targetVy = targetY;
 }
 
 function updatePlayer(dt){
@@ -1703,28 +1843,45 @@ function updatePlayer(dt){
   // 無敵中は左右移動も止める（演出統一）
   if (p.invincible > 0){
     p.vx *= 0.85;
+    p.vy *= 0.85;
   } else if (Game.elasticLocked){
     // エラスティック中は強制vx
     p.vx = Game.elasticVx;
+    p.vy *= 0.82;
   } else {
     // スムーズな加速・減速
-    const maxSpeed = 280; // px/sec
-    const targetSpeed = p.targetVx * maxSpeed;
-    const accel = 1400;   // px/sec^2
-    if (p.vx < targetSpeed){
-      p.vx = Math.min(p.vx + accel * dt, targetSpeed);
+    const assistOn = Game.assistTimer > 0;
+    const maxSpeedX = assistOn ? 320 : 280;
+    const maxSpeedY = assistOn ? 260 : 210;
+    const targetSpeedX = p.targetVx * maxSpeedX;
+    const targetSpeedY = p.targetVy * maxSpeedY;
+    const accelX = assistOn ? 1850 : 1400;
+    const accelY = assistOn ? 1650 : 1200;
+    if (p.vx < targetSpeedX){
+      p.vx = Math.min(p.vx + accelX * dt, targetSpeedX);
     } else {
-      p.vx = Math.max(p.vx - accel * dt, targetSpeed);
+      p.vx = Math.max(p.vx - accelX * dt, targetSpeedX);
     }
-    if (p.targetVx === 0){
+    if (p.vy < targetSpeedY){
+      p.vy = Math.min(p.vy + accelY * dt, targetSpeedY);
+    } else {
+      p.vy = Math.max(p.vy - accelY * dt, targetSpeedY);
+    }
+    if (Math.abs(p.targetVx) < 0.01){
       // 摩擦
-      const friction = 1200 * dt;
+      const friction = (assistOn ? 1400 : 1200) * dt;
       if (p.vx > 0) p.vx = Math.max(0, p.vx - friction);
       else if (p.vx < 0) p.vx = Math.min(0, p.vx + friction);
+    }
+    if (Math.abs(p.targetVy) < 0.01){
+      const frictionY = (assistOn ? 1400 : 1100) * dt;
+      if (p.vy > 0) p.vy = Math.max(0, p.vy - frictionY);
+      else if (p.vy < 0) p.vy = Math.min(0, p.vy + frictionY);
     }
   }
 
   p.x += p.vx * dt;
+  p.y += p.vy * dt;
 
   // 壁判定
   const minX = p.radius;
@@ -1753,6 +1910,13 @@ function updatePlayer(dt){
     if (p.x < minX){ p.x = minX; p.vx = 0; }
     else if (p.x > maxX){ p.x = maxX; p.vx = 0; }
   }
+
+  const minY = Game.H * 0.62;
+  const maxY = Game.H * 0.9;
+  if (p.y < minY){ p.y = minY; p.vy = 0; }
+  else if (p.y > maxY){ p.y = maxY; p.vy = 0; }
+  p.depth = (p.y - p.baseY) / (maxY - minY);
+  p.depth = Math.max(-1, Math.min(1, p.depth));
 }
 
 // ---------- Entities ----------
@@ -1788,6 +1952,7 @@ function spawnOne(){
       { c:'reverse', col:'#ef4d8b' },
       { c:'elastic', col:'#2ec27e' },
       { c:'smoke',   col:'#7a5af8' },
+      { c:'assist',  col:'#1d7ad8' },
     ];
     const pick = colors[Math.floor(Math.random()*colors.length)];
     const x = Math.random() * (Game.W - 50) + 25;
@@ -1885,6 +2050,14 @@ function checkCollisions(){
   for (let i = Game.obstacles.length - 1; i >= 0; i--){
     const o = Game.obstacles[i];
     if (collideCircleRect(p.x, p.y, p.radius, o.x - o.w/2, o.y - o.h/2, o.w, o.h)){
+      if (Game.assistTimer > 0){
+        spawnParticles(p.x, p.y, '#3da9fc', 12);
+        Game.assistTimer = Math.max(0, Game.assistTimer - 1.2);
+        toast('アシストが衝突を吸収');
+        updateDebuffTags();
+        Game.obstacles.splice(i,1);
+        return;
+      }
       // ヒット
       p.invincible = 1.5;
       p.blink = 0;
@@ -1905,8 +2078,12 @@ function checkCollisions(){
     if (dx*dx + dy*dy <= (p.radius + it.r) * (p.radius + it.r)){
       spawnParticles(it.x, it.y, it.color, 18);
       Game.items.splice(i,1);
-      // 相手に妨害を送信
-      sendHijack(it.kind);
+      if (it.kind === 'assist'){
+        activateAssist();
+      } else {
+        // 相手に妨害を送信
+        sendHijack(it.kind);
+      }
       try { navigator.vibrate && navigator.vibrate(30); } catch(e){}
       playSE('pickup');
       break;
@@ -1947,7 +2124,10 @@ function syncDistanceIfNeeded(now){
     send({
       type: 'POS_SYNC',
       x: Game.player.x / Game.W,
+      y: Game.player.y / Game.H,
       vx: Game.player.vx / 400,
+      vy: Game.player.vy / 260,
+      z: +Game.player.depth.toFixed(3),
       hp: Game.player.hp != null ? Game.player.hp : 3,
       r: Game.reverseTimer > 0 ? 1 : 0,
       e: Game.elasticTimer > 0 ? 1 : 0,
@@ -2000,6 +2180,16 @@ function updateHUD(){
   const s = remain % 60;
   $('#hud-time').textContent = m + ':' + String(s).padStart(2,'0');
   $('#hud-dist').textContent = Math.floor(State.meDistance) + 'm';
+  updateGyroPanel();
+}
+
+function updateGyroPanel(){
+  const x = Math.max(0, Math.min(100, Math.abs(Game.tilt) * 70));
+  const z = Math.max(0, Math.min(100, Math.abs(Game.tiltDepth) * 70));
+  const gx = $('#gyro-x-fill');
+  const gz = $('#gyro-z-fill');
+  if (gx) gx.style.width = x.toFixed(1) + '%';
+  if (gz) gz.style.width = z.toFixed(1) + '%';
 }
 
 // =====================================================================
@@ -2041,6 +2231,7 @@ function draw(){
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  drawSpeedLines();
 
   // 中央のレーンガイド
   ctx.strokeStyle = 'rgba(29,122,216,0.08)';
@@ -2092,11 +2283,36 @@ function draw(){
     ctx.strokeRect(2,2,w-4,h-4);
   }
 
+  // 画面周辺のビネット
+  const vg = ctx.createRadialGradient(w/2, h*0.45, h*0.2, w/2, h*0.5, h*0.9);
+  vg.addColorStop(0, 'rgba(255,255,255,0)');
+  vg.addColorStop(1, 'rgba(13,33,56,0.16)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0,0,w,h);
+
   ctx.restore();
 
   // スモーク（reverse の影響を受けないよう restore 後に描画）
   if (Game.smokeActive){
     drawSmoke();
+  }
+
+  function drawSpeedLines(){
+    const boost = 0.8 + (Game.scrollSpeed - 4) * 0.25 + Math.abs(Game.player.depth) * 0.5;
+    for (const l of Game.speedLines){
+      l.y += (Game.scrollSpeed * 25 * l.s * boost) / 60;
+      if (l.y > Game.H + 20){
+        l.y = -20;
+        l.x = Math.random() * Game.W;
+      }
+      const alpha = Math.min(0.38, l.a * (0.8 + boost * 0.3));
+      ctx.strokeStyle = `rgba(61,169,252,${alpha.toFixed(3)})`;
+      ctx.lineWidth = l.w;
+      ctx.beginPath();
+      ctx.moveTo(l.x, l.y);
+      ctx.lineTo(l.x, l.y + l.len * boost);
+      ctx.stroke();
+    }
   }
 
   // PiP 描画
@@ -2109,18 +2325,22 @@ function draw(){
 function drawOpGhost(){
   if (!OpGhost.visible) return;
   // AI モードでは AI.player の位置を反映（自分の世界に重ねて表示）
-  let gx, gy, gvx, ghp, ginv;
+  let gx, gy, gvx, gvy, gdepth, ghp, ginv;
   if (State.mode === 'ai'){
     // CPU の相対 x をこちらの座標系に投影、y は固定（プレイヤーより少し上）
     gx = AI.player.x;
-    gy = Game.H * 0.7;
+    gy = Game.H * 0.72;
     gvx = AI.player.vx;
+    gvy = 0;
+    gdepth = 0;
     ghp = AI.player.hp;
     ginv = AI.player.invincible > 0;
   } else if (State.mode === 'online'){
     gx = OpGhost.x;
-    gy = Game.H * 0.7;
+    gy = OpGhost.y;
     gvx = OpGhost.vx;
+    gvy = OpGhost.vy;
+    gdepth = OpGhost.depth || 0;
     ghp = OpGhost.hp;
     ginv = OpGhost.invincible > 0;
   } else {
@@ -2131,15 +2351,17 @@ function drawOpGhost(){
   ctx.save();
   ctx.globalAlpha = ginv ? 0.35 : 0.55;
   ctx.translate(gx, gy);
+  const depthScale = 1 + gdepth * 0.16;
+  ctx.scale(depthScale, depthScale);
 
   // 影
   ctx.fillStyle = 'rgba(255,140,66,0.18)';
   ctx.beginPath();
-  ctx.ellipse(0, 18, 14, 4, 0, 0, Math.PI*2);
+  ctx.ellipse(0, 18, 13 + Math.abs(gdepth)*2, 4, 0, 0, Math.PI*2);
   ctx.fill();
 
   // 進行傾き
-  const tilt = Math.max(-0.4, Math.min(0.4, gvx / 400));
+  const tilt = Math.max(-0.4, Math.min(0.4, (gvx / 400) + (gvy / 900)));
   ctx.rotate(tilt);
 
   // 本体（オレンジ系の宇宙船）
@@ -2172,7 +2394,7 @@ function drawOpGhost(){
   ctx.fillStyle = 'rgba(255,140,66,0.85)';
   ctx.font = 'bold 9px -apple-system, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('RIVAL', gx, gy - 28);
+  ctx.fillText('RIVAL', gx, gy - 28 - (gdepth*8));
   ctx.restore();
 }
 
@@ -2198,6 +2420,7 @@ function drawPiP(){
 
   // データソースを決定
   let obstacles = [], items = [], px = w/2, py = h*0.8, scale = 1;
+  let pz = 0;
   let reverseOn = false, smokeOn = false;
   let oppDistance = 0;
 
@@ -2211,15 +2434,17 @@ function drawPiP(){
     reverseOn = AI.reverseTimer > 0;
     smokeOn = AI.smokeActive;
     oppDistance = AI.distance;
+    pz = 0;
   } else if (State.mode === 'online'){
     obstacles = OpGhost.obstacles; // 通信負荷を避けるため空でもよい
     items = OpGhost.items;
     px = (OpGhost.x / Game.W) * w;
-    py = h * 0.8;
+    py = (OpGhost.y / Game.H) * h;
     scale = w / Game.W;
     reverseOn = OpGhost.reverseTimer > 0;
     smokeOn = OpGhost.smokeActive;
     oppDistance = State.opDistance;
+    pz = OpGhost.depth || 0;
   }
 
   // リバース中は上下反転
@@ -2250,7 +2475,7 @@ function drawPiP(){
   // 相手プレイヤー（PiP の中ではメインキャラなのでオレンジで強めに）
   pipCtx.fillStyle = '#ff8c42';
   pipCtx.beginPath();
-  pipCtx.arc(px, py, 4, 0, Math.PI*2);
+  pipCtx.arc(px, py, 4 + Math.abs(pz) * 1.5, 0, Math.PI*2);
   pipCtx.fill();
   pipCtx.strokeStyle = '#cc6a1f';
   pipCtx.lineWidth = 1;
@@ -2344,6 +2569,7 @@ function drawItem(it){
   if (it.kind === 'reverse') icon = '↕';
   else if (it.kind === 'elastic') icon = '⇆';
   else if (it.kind === 'smoke') icon = '✺';
+  else if (it.kind === 'assist') icon = '✦';
   ctx.fillText(icon, 0, 1);
   ctx.restore();
 }
@@ -2352,11 +2578,13 @@ function drawPlayer(){
   const p = Game.player;
   ctx.save();
   ctx.translate(p.x, p.y);
+  const depthScale = 1 + p.depth * 0.18;
+  ctx.scale(depthScale, depthScale);
 
   // 影
   ctx.fillStyle = 'rgba(13,33,56,0.18)';
   ctx.beginPath();
-  ctx.ellipse(0, p.radius + 6, p.radius*0.9, 4, 0, 0, Math.PI*2);
+  ctx.ellipse(0, p.radius + 6, p.radius*(0.82 + Math.abs(p.depth)*0.18), 4, 0, 0, Math.PI*2);
   ctx.fill();
 
   const blinkVisible = (p.invincible <= 0) || (Math.floor(p.blink * 12) % 2 === 0);
@@ -2365,7 +2593,7 @@ function drawPlayer(){
     // 宇宙船風ポリゴン
     ctx.save();
     // 進行方向に少し傾ける
-    const tilt = Math.max(-0.4, Math.min(0.4, p.vx / 400));
+    const tilt = Math.max(-0.45, Math.min(0.45, (p.vx / 400) + (p.vy / 950)));
     ctx.rotate(tilt);
 
     // 本体
@@ -2410,6 +2638,14 @@ function drawPlayer(){
     ctx.lineTo(2, p.radius - 2);
     ctx.closePath();
     ctx.fill();
+
+    if (Game.assistTimer > 0){
+      ctx.strokeStyle = 'rgba(61,169,252,0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.radius + 8 + Math.sin(performance.now()/180)*2, 0, Math.PI*2);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }
@@ -2480,6 +2716,12 @@ function parseHex(hex){
 // =====================================================================
 //                          HIJACKS
 // =====================================================================
+function activateAssist(){
+  Game.assistTimer = Math.max(Game.assistTimer, 6.0);
+  toast('アシストドライブ起動');
+  updateDebuffTags();
+}
+
 function sendHijack(kind){
   if (Game.hijackCooldown > 0) return;
   Game.hijackCooldown = 0.6;
@@ -2547,6 +2789,12 @@ function updateDebuffTags(){
     t.textContent = '✺ SMOKE';
     wrap.appendChild(t);
   }
+  if (Game.assistTimer > 0){
+    const t = document.createElement('div');
+    t.className = 'debuff-tag assist';
+    t.textContent = '✦ ASSIST';
+    wrap.appendChild(t);
+  }
 }
 
 // =====================================================================
@@ -2560,6 +2808,10 @@ window.addEventListener('keydown', (e)=>{
     Game.keys.left = true;
   } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'){
     Game.keys.right = true;
+  } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W'){
+    Game.keys.up = true;
+  } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S'){
+    Game.keys.down = true;
   } else if (e.code === 'Space' || e.key === ' '){
     e.preventDefault();
     if (Game.smokeActive){
@@ -2576,6 +2828,10 @@ window.addEventListener('keyup', (e)=>{
     Game.keys.left = false;
   } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'){
     Game.keys.right = false;
+  } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W'){
+    Game.keys.up = false;
+  } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S'){
+    Game.keys.down = false;
   }
 });
 
@@ -2585,6 +2841,11 @@ function onDeviceOrientation(e){
     // -45..45 を -1..1 にマッピング（少し感度高め）
     const v = Math.max(-45, Math.min(45, e.gamma));
     Game.tilt = v / 30; // 30度で最大速度
+  }
+  if (typeof e.beta === 'number'){
+    // 前後傾き: -35..35 を -1..1
+    const by = Math.max(-35, Math.min(35, e.beta));
+    Game.tiltDepth = by / 28;
   }
 }
 window.addEventListener('deviceorientation', onDeviceOrientation, true);
