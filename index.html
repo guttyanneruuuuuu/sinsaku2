@@ -160,7 +160,77 @@ input[type="text"]:focus, input[type="number"]:focus{
 /* =========================
    TITLE
 ========================= */
-#title-screen{ justify-content: space-between; }
+#title-screen{ justify-content: flex-start; gap: 12px; }
+
+/* モード選択 */
+.mode-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mode-btn{
+  appearance:none; border:none; cursor:pointer; font: inherit;
+  padding: 16px 12px;
+  border-radius: var(--radius-l);
+  background:#fff;
+  border:2px solid var(--line);
+  text-align:center;
+  transition: transform .08s ease, border-color .15s ease, box-shadow .15s ease;
+  box-shadow: var(--shadow-soft);
+  color: var(--ink-1);
+}
+.mode-btn:hover{ border-color: var(--primary); }
+.mode-btn:active{ transform: translateY(1px) scale(0.99); }
+.mode-btn.active{
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(61,169,252,0.18), var(--shadow-card);
+  background: linear-gradient(180deg, #fff, #f3f8ff);
+}
+.mode-btn .ico{
+  font-size: 30px; line-height: 1; display:block; margin-bottom: 6px;
+}
+.mode-btn .ttl{
+  font-size: 14px; font-weight: 800; letter-spacing:.04em;
+}
+.mode-btn .sub{
+  font-size: 10px; color: var(--ink-3); margin-top: 2px;
+  letter-spacing:.06em;
+}
+.mode-section{ margin-top: 8px; }
+
+/* オンライン専用パネル（モード=onlineの時だけ表示） */
+.online-only{ display:none; }
+body[data-mode="online"] .online-only{ display:block; }
+
+/* AI難易度セレクタ */
+.ai-only{ display:none; }
+body[data-mode="ai"] .ai-only{ display:block; }
+.diff-row{ display:flex; gap:6px; margin-top:8px; }
+.diff-btn{
+  flex:1; appearance:none; border:1px solid var(--line); background:#fff;
+  padding: 10px 6px; border-radius: var(--radius-m); cursor:pointer;
+  font: inherit; font-weight: 800; color: var(--ink-2);
+  font-size: 13px; letter-spacing:.08em;
+}
+.diff-btn.active{
+  background: linear-gradient(180deg, var(--primary), var(--primary-dark));
+  color:#fff; border-color: var(--primary-dark);
+  box-shadow: var(--shadow-soft);
+}
+
+.solo-only{ display:none; }
+body[data-mode="solo"] .solo-only{ display:block; }
+
+/* スタートボタン */
+.big-start{
+  margin-top: 10px;
+  font-size: 18px; padding: 16px;
+  background: linear-gradient(180deg, var(--accent), #e0732a);
+}
+.big-start.online{
+  background: linear-gradient(180deg, var(--primary), var(--primary-dark));
+}
 
 .logo-wrap{
   text-align:center;
@@ -477,7 +547,7 @@ input[type="text"]:focus, input[type="number"]:focus{
 }
 </style>
 </head>
-<body>
+<body data-mode="ai">
 <div id="app">
   <div id="stage">
 
@@ -491,29 +561,81 @@ input[type="text"]:focus, input[type="number"]:focus{
         <div class="logo-sub">グラビティ・ハイジャック</div>
       </div>
 
-      <div class="id-section card">
-        <div class="label">あなたのID</div>
-        <div class="id-row">
-          <div class="my-id" id="my-id">----</div>
-          <button class="btn secondary" id="copy-id-btn" type="button">コピー</button>
+      <!-- モード選択 -->
+      <div class="mode-section">
+        <div class="label">プレイモードを選ぶ</div>
+        <div class="mode-grid">
+          <button class="mode-btn active" id="mode-btn-ai" data-mode="ai" type="button">
+            <span class="ico" aria-hidden="true">🤖</span>
+            <span class="ttl">CPU と対戦</span>
+            <span class="sub">OFFLINE</span>
+          </button>
+          <button class="mode-btn" id="mode-btn-online" data-mode="online" type="button">
+            <span class="ico" aria-hidden="true">👥</span>
+            <span class="ttl">友達と対戦</span>
+            <span class="sub">ONLINE P2P</span>
+          </button>
+          <button class="mode-btn" id="mode-btn-solo" data-mode="solo" type="button" style="grid-column: span 2;">
+            <span class="ico" aria-hidden="true">🏃</span>
+            <span class="ttl">ひとり練習（ハイスコア狙い）</span>
+            <span class="sub">PRACTICE / HIGH SCORE</span>
+          </button>
         </div>
-        <div class="id-status" id="peer-status">サーバーに接続中…</div>
       </div>
 
-      <div class="connect-section card">
-        <div class="label">相手のIDを入力して接続</div>
-        <div class="row">
-          <input id="remote-id-input" type="text" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off" />
-          <button class="btn" id="connect-btn" type="button">接続</button>
+      <!-- AI モード -->
+      <div class="ai-only">
+        <div class="card mode-section" style="margin-top: 12px;">
+          <div class="label">CPU の強さ</div>
+          <div class="diff-row" id="diff-row">
+            <button class="diff-btn" data-diff="easy" type="button">EASY</button>
+            <button class="diff-btn active" data-diff="normal" type="button">NORMAL</button>
+            <button class="diff-btn" data-diff="hard" type="button">HARD</button>
+          </div>
+          <div class="copy-hint">CPU と 2分間の対戦。CPUも障害物を避け、アイテムを拾い、妨害を撃ってきます。</div>
         </div>
-        <div class="copy-hint">
-          ※ ふたりとも同じURLを開き、片方がもう片方のIDを入力すれば対戦できます。
+        <button class="btn big-start" id="start-ai-btn" type="button">CPUと対戦スタート</button>
+      </div>
+
+      <!-- オンラインモード -->
+      <div class="online-only">
+        <div class="id-section card" style="margin-top: 12px;">
+          <div class="label">あなたのID</div>
+          <div class="id-row">
+            <div class="my-id" id="my-id">----</div>
+            <button class="btn secondary" id="copy-id-btn" type="button">コピー</button>
+          </div>
+          <div class="id-status" id="peer-status">サーバーに接続中…</div>
+        </div>
+
+        <div class="connect-section card" style="margin-top: 10px;">
+          <div class="label">相手のIDを入力して接続</div>
+          <div class="row">
+            <input id="remote-id-input" type="text" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off" />
+            <button class="btn" id="connect-btn" type="button">接続</button>
+          </div>
+          <div class="copy-hint">
+            ※ ふたりとも同じURLを開き、片方がもう片方のIDを入力すれば対戦できます。
+          </div>
         </div>
       </div>
 
-      <div class="tips">
-        <b>2分間で遠くへ。</b> 端末を傾けて操作（PCはA/D・矢印キー）。
-        アイテムで <b>相手の画面を妨害</b> できます。
+      <!-- ソロモード -->
+      <div class="solo-only">
+        <div class="card mode-section" style="margin-top: 12px;">
+          <div class="label">ハイスコア</div>
+          <div style="display:flex; align-items:baseline; justify-content:space-between;">
+            <div style="font-size:30px; font-weight:800; color: var(--primary-dark); font-variant-numeric: tabular-nums;" id="solo-hi">0m</div>
+            <div style="font-size:11px; color: var(--ink-3);">SOLO BEST</div>
+          </div>
+          <div class="copy-hint">2分間でどこまで進めるか挑戦。アイテムや障害物はそのまま、相手はいません。</div>
+        </div>
+        <button class="btn big-start" id="start-solo-btn" type="button">練習スタート</button>
+      </div>
+
+      <div class="tips" style="margin-top: 10px;">
+        <b>2分間で遠くへ。</b> 端末を傾けて操作（PCは A/D・矢印キー）。
+        アイテムで <b>相手を妨害</b>、近付いて <b>体当たり攻撃</b> もできます。
         <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
           <span class="debuff-tag reverse" style="font-size:10px;">↕ 反転</span>
           <span class="debuff-tag elastic" style="font-size:10px;">⇆ 跳ね返し</span>
@@ -521,7 +643,7 @@ input[type="text"]:focus, input[type="number"]:focus{
         </div>
       </div>
 
-      <div class="title-foot">© Gravity Hijack — PeerJS P2P Battle</div>
+      <div class="title-foot">© Gravity Hijack — Local CPU / Online P2P Battle</div>
     </section>
 
     <!-- =========================
@@ -612,16 +734,17 @@ input[type="text"]:focus, input[type="number"]:focus{
         <div class="result-title" id="result-title">WIN</div>
         <div class="result-stats">
           <div class="stat">
-            <div class="k">YOUR DISTANCE</div>
+            <div class="k" id="result-me-label">YOUR DISTANCE</div>
             <div class="v" id="result-me">0m</div>
           </div>
           <div class="stat">
-            <div class="k">RIVAL DISTANCE</div>
+            <div class="k" id="result-op-label">RIVAL DISTANCE</div>
             <div class="v" id="result-op">0m</div>
           </div>
         </div>
         <div class="result-actions">
-          <button class="btn" id="back-title-btn" type="button">タイトルに戻る</button>
+          <button class="btn" id="rematch-btn" type="button">もう一度</button>
+          <button class="btn ghost" id="back-title-btn" type="button">タイトルに戻る</button>
         </div>
       </div>
     </section>
@@ -657,6 +780,8 @@ function showScreen(name){
 
 // ---------- State ----------
 const State = {
+  mode: 'ai',                    // 'ai' | 'online' | 'solo'
+  aiDifficulty: 'normal',        // 'easy' | 'normal' | 'hard'
   myId: null,
   peer: null,
   conn: null,
@@ -673,6 +798,42 @@ const State = {
   meFinalDistance: null,
   opFinalDistance: null,
 };
+
+// AI戦時に「相手」として振る舞うエージェント
+const AI = {
+  enabled: false,
+  difficulty: 'normal',
+  // CPU が画面上で見ている世界に対する物理状態
+  player: {
+    x: 180, y: 480, vx: 0, radius: 16, targetVx: 0,
+    invincible: 0, blink: 0, hp: 3,
+  },
+  distance: 0,                   // 自身の到達距離 (m)
+  distanceAccum: 0,              // ピクセル蓄積
+  obstacles: [],                 // CPU が認識する障害物（自身のフィールド）
+  items: [],
+  particles: [],
+  spawnCounter: 0,
+  spawnInterval: 60,
+  reverseTimer: 0,
+  elasticTimer: 0,
+  elasticVx: 0,
+  elasticLocked: false,
+  smokeActive: false,
+  hijackCooldown: 0,
+  syncCounter: 0,                // 距離同期用
+  thinkTimer: 0,
+  // 妨害を撃つランダム性
+  itemPickStreak: 0,
+};
+
+// ハイスコア（ソロモード）
+function getSoloBest(){
+  try { return parseInt(localStorage.getItem('gh_solo_best') || '0', 10) || 0; } catch(e){ return 0; }
+}
+function setSoloBest(v){
+  try { localStorage.setItem('gh_solo_best', String(v)); } catch(e){}
+}
 
 // ---------- Utility: Audio (WebAudio 簡易SE) ----------
 let audioCtx = null;
@@ -844,6 +1005,14 @@ function attachConnection(conn){
 }
 
 function send(obj){
+  // AIモード / SOLOモードでは PeerJS を使わない。AI モードは AI 側に渡す。
+  if (State.mode === 'ai'){
+    aiReceive(obj);
+    return;
+  }
+  if (State.mode === 'solo'){
+    return; // 通信なし
+  }
   if (State.conn && State.conn.open){
     try { State.conn.send(obj); } catch(e){ console.warn(e); }
   }
@@ -990,14 +1159,16 @@ function updateReadyTags(){
   const opTag = $('#op-ready-tag');
   const meCard = $('#me-card');
   const opCard = $('#op-card');
-  meTag.textContent = State.meReady ? 'READY' : 'NOT READY';
-  opTag.textContent = State.opReady ? 'READY' : 'NOT READY';
-  meCard.classList.toggle('ready', State.meReady);
-  opCard.classList.toggle('ready', State.opReady);
+  if (meTag) meTag.textContent = State.meReady ? 'READY' : 'NOT READY';
+  if (opTag) opTag.textContent = State.opReady ? 'READY' : 'NOT READY';
+  if (meCard) meCard.classList.toggle('ready', State.meReady);
+  if (opCard) opCard.classList.toggle('ready', State.opReady);
 
   const btn = $('#ready-btn');
-  btn.textContent = State.meReady ? 'CANCEL READY' : 'READY';
-  btn.classList.toggle('ready', State.meReady);
+  if (btn){
+    btn.textContent = State.meReady ? 'CANCEL READY' : 'READY';
+    btn.classList.toggle('ready', State.meReady);
+  }
 }
 
 function tryStartCountdown(){
@@ -1200,39 +1371,72 @@ function endGame(){
   cancelAnimationFrame(Game.rafId);
 
   State.meFinalDistance = Math.floor(State.meDistance);
-  send({ type: 'GAME_OVER', d: State.meFinalDistance });
-  send({ type: 'RESULT_DIST', d: State.meFinalDistance });
 
-  // 相手の最終距離を待つ（最大1.5秒）
-  const waitStart = Date.now();
-  const waitFinalize = () => {
-    if (State.opFinalDistance != null || Date.now() - waitStart > 1500){
-      finalizeResult();
-    } else {
-      setTimeout(waitFinalize, 100);
-    }
-  };
-  waitFinalize();
+  if (State.mode === 'online'){
+    send({ type: 'GAME_OVER', d: State.meFinalDistance });
+    send({ type: 'RESULT_DIST', d: State.meFinalDistance });
+    // 相手の最終距離を待つ（最大1.5秒）
+    const waitStart = Date.now();
+    const waitFinalize = () => {
+      if (State.opFinalDistance != null || Date.now() - waitStart > 1500){
+        finalizeResult();
+      } else {
+        setTimeout(waitFinalize, 100);
+      }
+    };
+    waitFinalize();
+  } else if (State.mode === 'ai'){
+    State.opFinalDistance = Math.floor(AI.distance);
+    finalizeResult();
+  } else { // solo
+    State.opFinalDistance = null;
+    finalizeResult();
+  }
 }
 
 function finalizeResult(){
   showScreen('result');
   const me = Math.floor(State.meFinalDistance != null ? State.meFinalDistance : State.meDistance);
-  const op = Math.floor(State.opFinalDistance != null ? State.opFinalDistance : State.opDistance);
   $('#result-me').textContent = me + 'm';
-  $('#result-op').textContent = op + 'm';
-  const titleEl = $('#result-title');
-  if (me > op){
-    titleEl.textContent = 'WIN';
-    titleEl.className = 'result-title win';
-    playSE('win');
-  } else if (me < op){
-    titleEl.textContent = 'LOSE';
-    titleEl.className = 'result-title lose';
-    playSE('lose');
+
+  if (State.mode === 'solo'){
+    // SOLO は WIN/LOSE ではなくハイスコア更新
+    const best = getSoloBest();
+    let newBest = best;
+    if (me > best){ newBest = me; setSoloBest(me); }
+    $('#result-op').textContent = newBest + 'm';
+    const titleEl = $('#result-title');
+    if (me > best){
+      titleEl.textContent = 'NEW BEST!';
+      titleEl.className = 'result-title win';
+      playSE('win');
+    } else {
+      titleEl.textContent = 'FINISH';
+      titleEl.className = 'result-title draw';
+      playSE('countdown');
+    }
+    // ラベル変更
+    $('#result-op-label').textContent = 'BEST DISTANCE';
+    $('#result-me-label').textContent = 'YOUR DISTANCE';
+    updateSoloBestUI();
   } else {
-    titleEl.textContent = 'DRAW';
-    titleEl.className = 'result-title draw';
+    const op = Math.floor(State.opFinalDistance != null ? State.opFinalDistance : State.opDistance);
+    $('#result-op').textContent = op + 'm';
+    $('#result-op-label').textContent = (State.mode === 'ai') ? 'CPU DISTANCE' : 'RIVAL DISTANCE';
+    $('#result-me-label').textContent = 'YOUR DISTANCE';
+    const titleEl = $('#result-title');
+    if (me > op){
+      titleEl.textContent = 'WIN';
+      titleEl.className = 'result-title win';
+      playSE('win');
+    } else if (me < op){
+      titleEl.textContent = 'LOSE';
+      titleEl.className = 'result-title lose';
+      playSE('lose');
+    } else {
+      titleEl.textContent = 'DRAW';
+      titleEl.className = 'result-title draw';
+    }
   }
 }
 
@@ -1259,6 +1463,11 @@ function gameLoop(now){
   updateDistance(dt);
   updateHUD();
   syncDistanceIfNeeded(now);
+
+  // AI モードでは CPU をシミュレート
+  if (State.mode === 'ai' && AI.enabled){
+    aiUpdate(dt);
+  }
 
   draw();
 
@@ -2069,10 +2278,29 @@ $('#back-title-btn').addEventListener('click', ()=>{
   try { if (State.conn) State.conn.close(); } catch(e){}
   backToTitle();
 });
+$('#rematch-btn').addEventListener('click', ()=>{
+  ensureAudio();
+  if (State.mode === 'ai'){
+    startAIMatch();
+  } else if (State.mode === 'solo'){
+    startSoloMatch();
+  } else {
+    // online: もう一度ロビーへ戻る（接続は維持）
+    if (State.conn && State.conn.open){
+      State.meReady = false; State.opReady = false;
+      State.finished = false;
+      updateReadyTags();
+      showScreen('lobby');
+    } else {
+      backToTitle();
+    }
+  }
+});
 
 function backToTitle(){
   Game.running = false;
   cancelAnimationFrame(Game.rafId);
+  AI.enabled = false;
   State.conn = null;
   State.remoteId = null;
   State.meReady = false;
@@ -2081,13 +2309,17 @@ function backToTitle(){
   State.opDistance = 0;
   State.finished = false;
   $('#remote-id-input').value = '';
-  $('#connect-btn').disabled = false;
-  $('#op-card-id').textContent = '----';
+  if ($('#connect-btn')) $('#connect-btn').disabled = false;
+  if ($('#op-card-id')) $('#op-card-id').textContent = '----';
   updateReadyTags();
   showScreen('title');
-  // Peer を作り直して新しい ID を取得
-  try { if (State.peer) State.peer.destroy(); } catch(e){}
-  setupPeer();
+  updateSoloBestUI();
+  // オンラインなら Peer を作り直す
+  if (State.mode === 'online'){
+    try { if (State.peer) State.peer.destroy(); } catch(e){}
+    State.peer = null;
+    setupPeer();
+  }
 }
 
 // =====================================================================
@@ -2101,8 +2333,370 @@ window.addEventListener('orientationchange', ()=>{
 });
 
 // 最初のセットアップ
-setupPeer();
+applyMode(State.mode);
 showScreen('title');
+updateSoloBestUI();
+
+// =====================================================================
+//                          MODE SELECT
+// =====================================================================
+function applyMode(mode){
+  State.mode = mode;
+  document.body.setAttribute('data-mode', mode);
+  document.querySelectorAll('.mode-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  // オンラインを選んだら PeerJS をセットアップ（初回のみ）
+  if (mode === 'online' && (!State.peer || State.peer.destroyed)){
+    setupPeer();
+  }
+}
+function updateSoloBestUI(){
+  const el = $('#solo-hi'); if (el) el.textContent = getSoloBest() + 'm';
+}
+
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    applyMode(btn.dataset.mode);
+    ensureAudio();
+  });
+});
+document.querySelectorAll('.diff-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.diff-btn').forEach(b=> b.classList.remove('active'));
+    btn.classList.add('active');
+    State.aiDifficulty = btn.dataset.diff;
+  });
+});
+$('#start-ai-btn').addEventListener('click', ()=>{
+  ensureAudio();
+  State.mode = 'ai';
+  startAIMatch();
+});
+$('#start-solo-btn').addEventListener('click', ()=>{
+  ensureAudio();
+  State.mode = 'solo';
+  startSoloMatch();
+});
+
+function startAIMatch(){
+  // 仮想ロビーをスキップしてカウントダウンへ
+  initAIOpponent(State.aiDifficulty);
+  State.meReady = true; State.opReady = true;
+  requestMotionPermissionIfNeeded();
+  startCountdown();
+}
+function startSoloMatch(){
+  AI.enabled = false;
+  State.meReady = true; State.opReady = false;
+  requestMotionPermissionIfNeeded();
+  startCountdown();
+}
+
+// =====================================================================
+//                          AI OPPONENT
+// =====================================================================
+function initAIOpponent(diff){
+  AI.enabled = true;
+  AI.difficulty = diff;
+  AI.distance = 0;
+  AI.distanceAccum = 0;
+  AI.obstacles = [];
+  AI.items = [];
+  AI.particles = [];
+  AI.spawnCounter = 0;
+  AI.spawnInterval = 60;
+  AI.reverseTimer = 0;
+  AI.elasticTimer = 0;
+  AI.elasticVx = 0;
+  AI.elasticLocked = false;
+  AI.smokeActive = false;
+  AI.hijackCooldown = 0;
+  AI.syncCounter = 0;
+  AI.thinkTimer = 0;
+  AI.itemPickStreak = 0;
+  AI.player.x = Game.W / 2;
+  AI.player.y = Game.H * 0.8;
+  AI.player.vx = 0;
+  AI.player.targetVx = 0;
+  AI.player.invincible = 0;
+  AI.player.blink = 0;
+  AI.player.hp = 3;
+}
+
+// AIへの「送信」をシミュレート（自分→AIへ妨害が飛ぶ等）
+function aiReceive(msg){
+  if (!msg || typeof msg !== 'object') return;
+  switch(msg.type){
+    case 'HIJACK':
+      aiOnHijack(msg.kind);
+      break;
+    case 'DISTANCE_SYNC':
+      // 自分の距離が向こうに行く必要はない
+      break;
+    case 'GAME_OVER':
+      // 受信側として最終距離を返す
+      State.opFinalDistance = Math.floor(AI.distance);
+      break;
+    case 'RESULT_DIST':
+      State.opFinalDistance = Math.floor(AI.distance);
+      break;
+    case 'READY':
+    case 'START':
+    case 'CLOCK':
+      // AI モードでは無視
+      break;
+  }
+}
+
+function aiOnHijack(kind){
+  if (kind === 'reverse'){
+    AI.reverseTimer = 5.0;
+  } else if (kind === 'elastic'){
+    AI.elasticTimer = 4.0;
+    AI.elasticLocked = false;
+  } else if (kind === 'smoke'){
+    AI.smokeActive = true;
+    // AI は一定時間後に解除する（難易度で時間が変わる）
+    const releaseAfter = (AI.difficulty === 'hard') ? 1.4
+                       : (AI.difficulty === 'easy') ? 3.0
+                       : 2.2;
+    setTimeout(()=>{ AI.smokeActive = false; }, releaseAfter * 1000);
+  }
+}
+
+function aiUpdate(dt){
+  if (!AI.enabled) return;
+
+  // タイマー
+  if (AI.reverseTimer > 0){ AI.reverseTimer -= dt; if (AI.reverseTimer < 0) AI.reverseTimer = 0; }
+  if (AI.elasticTimer > 0){
+    AI.elasticTimer -= dt;
+    if (AI.elasticTimer <= 0){ AI.elasticTimer = 0; AI.elasticLocked = false; AI.elasticVx = 0; }
+  }
+  if (AI.player.invincible > 0){
+    AI.player.invincible -= dt;
+    AI.player.blink += dt;
+    if (AI.player.invincible <= 0){ AI.player.invincible = 0; AI.player.blink = 0; }
+  }
+  if (AI.hijackCooldown > 0) AI.hijackCooldown -= dt;
+
+  // CPU 用の世界の難易度（自分と同じ進行で簡略化）
+  AI.spawnInterval = Game.spawnInterval;
+
+  // CPU の障害物・アイテムは独立に生成（CPU の世界）
+  AI.spawnCounter += 1;
+  if (AI.spawnCounter >= AI.spawnInterval){
+    AI.spawnCounter = 0;
+    aiSpawnOne();
+    if (Game.gameTime > 60 && Math.random() < 0.35) aiSpawnOne();
+    if (Game.gameTime > 90 && Math.random() < 0.4) aiSpawnOne();
+  }
+
+  const speed = Game.scrollSpeed * 60 * dt;
+
+  // 進める
+  for (let i = AI.obstacles.length - 1; i >= 0; i--){
+    const o = AI.obstacles[i];
+    o.y += speed;
+    o.rot += (o.rotSpeed || 0) * dt;
+    if (o.y > Game.H + 60) AI.obstacles.splice(i,1);
+  }
+  for (let i = AI.items.length - 1; i >= 0; i--){
+    const it = AI.items[i];
+    it.y += speed;
+    it.pulse += dt * 4;
+    if (it.y > Game.H + 40) AI.items.splice(i,1);
+  }
+
+  // 思考: 最寄り障害物を避け、アイテムを取りに行く
+  aiThink(dt);
+
+  // 物理
+  const maxSpeedTbl = { easy: 200, normal: 260, hard: 320 };
+  const maxSpeed = maxSpeedTbl[AI.difficulty] || 260;
+  const accel = 1300;
+  const target = AI.player.targetVx * maxSpeed;
+  if (AI.player.invincible > 0){
+    AI.player.vx *= 0.85;
+  } else if (AI.elasticLocked){
+    AI.player.vx = AI.elasticVx;
+  } else {
+    if (AI.player.vx < target) AI.player.vx = Math.min(AI.player.vx + accel * dt, target);
+    else AI.player.vx = Math.max(AI.player.vx - accel * dt, target);
+    if (AI.player.targetVx === 0){
+      const fr = 1100 * dt;
+      if (AI.player.vx > 0) AI.player.vx = Math.max(0, AI.player.vx - fr);
+      else if (AI.player.vx < 0) AI.player.vx = Math.min(0, AI.player.vx + fr);
+    }
+  }
+  AI.player.x += AI.player.vx * dt;
+  const minX = AI.player.radius, maxX = Game.W - AI.player.radius;
+  if (AI.elasticTimer > 0){
+    if (!AI.elasticLocked){
+      if (AI.player.x <= minX){ AI.player.x = minX; AI.elasticLocked = true; AI.elasticVx = 420; }
+      else if (AI.player.x >= maxX){ AI.player.x = maxX; AI.elasticLocked = true; AI.elasticVx = -420; }
+    } else {
+      if (AI.player.x <= minX){ AI.player.x = minX; AI.elasticVx = Math.abs(AI.elasticVx); }
+      else if (AI.player.x >= maxX){ AI.player.x = maxX; AI.elasticVx = -Math.abs(AI.elasticVx); }
+    }
+  } else {
+    if (AI.player.x < minX){ AI.player.x = minX; AI.player.vx = 0; }
+    else if (AI.player.x > maxX){ AI.player.x = maxX; AI.player.vx = 0; }
+  }
+
+  // 衝突判定
+  if (AI.player.invincible <= 0){
+    for (let i = AI.obstacles.length - 1; i >= 0; i--){
+      const o = AI.obstacles[i];
+      if (collideCircleRect(AI.player.x, AI.player.y, AI.player.radius, o.x - o.w/2, o.y - o.h/2, o.w, o.h)){
+        AI.player.invincible = 1.5;
+        AI.player.blink = 0;
+        break;
+      }
+    }
+    for (let i = AI.items.length - 1; i >= 0; i--){
+      const it = AI.items[i];
+      const dx = AI.player.x - it.x, dy = AI.player.y - it.y;
+      if (dx*dx + dy*dy <= (AI.player.radius + it.r) * (AI.player.radius + it.r)){
+        AI.items.splice(i,1);
+        // CPU が妨害を撃つ（こちら側へ）
+        if (AI.hijackCooldown <= 0){
+          AI.hijackCooldown = 0.6;
+          const send = (AI.difficulty === 'hard') ? 0.95
+                     : (AI.difficulty === 'normal') ? 0.85
+                     : 0.6;
+          if (Math.random() < send){
+            receiveHijack(it.kind);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // 距離（CPU 側）
+  if (AI.player.invincible <= 0){
+    AI.distanceAccum += Game.scrollSpeed * 60 * dt;
+    AI.distance = AI.distanceAccum / 10;
+  }
+
+  // 0.5秒ごとに自分の opDistance を CPU の距離に同期（表示用）
+  AI.syncCounter += dt;
+  if (AI.syncCounter > 0.5){
+    AI.syncCounter = 0;
+    State.opDistance = AI.distance;
+    updateProgressBars();
+  }
+}
+
+function aiSpawnOne(){
+  if (Math.random() < 0.78){
+    const type = Math.random() < 0.55 ? 'rect' : 'star';
+    const w = 30 + Math.random()*60;
+    const x = Math.random() * (Game.W - w - 20) + 10 + w/2;
+    AI.obstacles.push({
+      type, x, y: -40,
+      w: w, h: 22 + Math.random()*16,
+      r: 14 + Math.random()*10,
+      rot: Math.random()*Math.PI*2,
+      rotSpeed: (Math.random()*2-1)*1.2,
+      color: pickObstacleColor(),
+    });
+  } else {
+    const colors = [
+      { c:'reverse', col:'#ef4d8b' },
+      { c:'elastic', col:'#2ec27e' },
+      { c:'smoke',   col:'#7a5af8' },
+    ];
+    const pick = colors[Math.floor(Math.random()*colors.length)];
+    const x = Math.random() * (Game.W - 50) + 25;
+    AI.items.push({
+      x, y: -30, r: 14,
+      kind: pick.c, color: pick.col, pulse: 0,
+    });
+  }
+}
+
+function aiThink(dt){
+  AI.thinkTimer -= dt;
+  // 反転中は左右逆。エラスティック中は入力ロック。スモーク中は判断が鈍る
+  const reactDelay = { easy: 0.18, normal: 0.10, hard: 0.04 }[AI.difficulty] || 0.10;
+  if (AI.thinkTimer > 0) return;
+  AI.thinkTimer = reactDelay;
+
+  if (AI.elasticLocked){ AI.player.targetVx = 0; return; }
+
+  // 視界泥棒中はランダムに動く
+  if (AI.smokeActive){
+    if (Math.random() < 0.05){
+      AI.player.targetVx = (Math.random()*2 - 1);
+    }
+    return;
+  }
+
+  // 直近の障害物を避け、最寄りのアイテムへ向かう
+  const px = AI.player.x, py = AI.player.y;
+
+  // 一番近い障害物（プレイヤーの少し上にあるもの）
+  let nearestObs = null, nearestObsDist = Infinity;
+  for (const o of AI.obstacles){
+    if (o.y > py + 20 || o.y < py - 320) continue;
+    const dy = py - o.y;
+    if (dy < nearestObsDist){
+      nearestObsDist = dy; nearestObs = o;
+    }
+  }
+
+  // 一番近いアイテム
+  let nearestItem = null, nearestItemDist = Infinity;
+  for (const it of AI.items){
+    if (it.y > py + 20 || it.y < py - 380) continue;
+    const dy = py - it.y;
+    if (dy < nearestItemDist){
+      nearestItemDist = dy; nearestItem = it;
+    }
+  }
+
+  // 避ける優先度: 近すぎる障害物
+  let targetX = px;
+  if (nearestObs && nearestObsDist < 220){
+    // 障害物の左右どちらが空いてるか
+    const leftFree  = (nearestObs.x - nearestObs.w/2) - AI.player.radius * 2;
+    const rightFree = Game.W - (nearestObs.x + nearestObs.w/2) - AI.player.radius * 2;
+    if (leftFree > rightFree){
+      targetX = Math.max(AI.player.radius + 6, nearestObs.x - nearestObs.w/2 - AI.player.radius - 14);
+    } else {
+      targetX = Math.min(Game.W - AI.player.radius - 6, nearestObs.x + nearestObs.w/2 + AI.player.radius + 14);
+    }
+  } else if (nearestItem){
+    targetX = nearestItem.x;
+  } else {
+    // ふらつく
+    if (Math.random() < 0.02){
+      targetX = Math.random() * Game.W;
+    } else {
+      targetX = px;
+    }
+  }
+
+  // ターゲットに向けた方向
+  const diff = targetX - px;
+  let tv = 0;
+  if (Math.abs(diff) > 6){
+    tv = Math.max(-1, Math.min(1, diff / 50));
+  }
+  // 反転中は左右が逆 = CPU の見た目は変わらない（ターゲットそのまま）
+  // CPU には逆効果はかけない（自分の世界では反転していない）
+  AI.player.targetVx = tv;
+}
+
+// CPU を画面に描画（自分のマップ上に小さく表示）
+function drawAIOpponent(){
+  if (!AI.enabled) return;
+  // CPU は別マップなので、ここでは自分の世界に置き換えで描画しない。
+  // 同じマップ表示は別コミットでサポート。ここでは PiP に描画する。
+}
 
 })();
 </script>
