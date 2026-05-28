@@ -767,7 +767,7 @@ body[data-mode="solo"] .solo-only{ display:block; }
       </div>
 
       <div class="lobby-hint">
-        スマホは端末を <b>左右＋前後に傾けて操作</b>。<br>
+        スマホは端末を <b>左右+前後に傾けて操作</b>。<br>
         妨害「視界泥棒（黒い画面）」を受けたら、<b>端末を振る</b>か <b>Spaceを5回連打</b> で解除！
       </div>
 
@@ -1915,7 +1915,11 @@ function updatePlayer(dt){
   const maxY = Game.H * 0.9;
   if (p.y < minY){ p.y = minY; p.vy = 0; }
   else if (p.y > maxY){ p.y = maxY; p.vy = 0; }
-  p.depth = (p.y - p.baseY) / (maxY - minY);
+  if (p.y >= p.baseY){
+    p.depth = (p.y - p.baseY) / Math.max(1, (maxY - p.baseY));
+  } else {
+    p.depth = (p.y - p.baseY) / Math.max(1, (p.baseY - minY));
+  }
   p.depth = Math.max(-1, Math.min(1, p.depth));
 }
 
