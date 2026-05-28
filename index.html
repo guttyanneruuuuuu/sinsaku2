@@ -362,6 +362,10 @@ input[type="text"]:focus, input[type="number"]:focus{
   box-shadow: 0 0 0 2px rgba(61,169,252,0.18);
 }
 .progress-rail.op .progress-fill{ background: var(--accent); box-shadow: 0 0 0 2px rgba(255,140,66,0.18);}
+.progress-label{
+  position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; font-weight: 800; color: var(--ink-3); letter-spacing: .12em;
+}
 
 /* バフ／デバフ表示 */
 .debuff-tags{
@@ -573,8 +577,14 @@ input[type="text"]:focus, input[type="number"]:focus{
           </div>
         </div>
 
-        <div class="progress-rail me"><div class="progress-fill" id="prog-me" style="height:0%"></div></div>
-        <div class="progress-rail op"><div class="progress-fill" id="prog-op" style="height:0%"></div></div>
+        <div class="progress-rail me">
+          <div class="progress-fill" id="prog-me" style="height:0%"></div>
+          <div class="progress-label">ME</div>
+        </div>
+        <div class="progress-rail op">
+          <div class="progress-fill" id="prog-op" style="height:0%"></div>
+          <div class="progress-label">OP</div>
+        </div>
 
         <div class="debuff-tags" id="debuff-tags"></div>
 
@@ -658,6 +668,67 @@ const State = {
   meFinalDistance: null,
   opFinalDistance: null,
 };
+
+// ---------- Utility: Audio (WebAudio 簡易SE) ----------
+let audioCtx = null;
+function ensureAudio(){
+  if (audioCtx) return audioCtx;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+  } catch(e){ audioCtx = null; }
+  return audioCtx;
+}
+function playTone(freq, dur, type, vol){
+  const ac = ensureAudio();
+  if (!ac) return;
+  if (ac.state === 'suspended') { try { ac.resume(); } catch(e){} }
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = freq;
+  g.gain.value = 0;
+  o.connect(g); g.connect(ac.destination);
+  const t = ac.currentTime;
+  const v = vol == null ? 0.18 : vol;
+  g.gain.linearRampToValueAtTime(v, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+function playSE(kind){
+  if (!audioCtx) return; // 一度はユーザー操作で起動済みの時のみ鳴らす
+  switch(kind){
+    case 'pickup':
+      playTone(880, 0.08, 'square', 0.14);
+      setTimeout(()=> playTone(1320, 0.10, 'square', 0.14), 60);
+      break;
+    case 'hit':
+      playTone(140, 0.18, 'sawtooth', 0.22);
+      break;
+    case 'countdown':
+      playTone(660, 0.12, 'triangle', 0.18);
+      break;
+    case 'start':
+      playTone(880, 0.10, 'triangle', 0.20);
+      setTimeout(()=> playTone(1320, 0.18, 'triangle', 0.20), 80);
+      break;
+    case 'hijack-recv':
+      playTone(220, 0.10, 'sawtooth', 0.20);
+      setTimeout(()=> playTone(180, 0.18, 'sawtooth', 0.20), 80);
+      break;
+    case 'win':
+      playTone(880, 0.12, 'triangle', 0.18);
+      setTimeout(()=> playTone(1100, 0.12, 'triangle', 0.18), 130);
+      setTimeout(()=> playTone(1320, 0.22, 'triangle', 0.18), 260);
+      break;
+    case 'lose':
+      playTone(440, 0.12, 'sawtooth', 0.18);
+      setTimeout(()=> playTone(330, 0.22, 'sawtooth', 0.18), 130);
+      break;
+  }
+}
 
 // ---------- Utility: Toast ----------
 function toast(msg){
@@ -897,8 +968,12 @@ $('#ready-btn').addEventListener('click', ()=>{
   State.meReady = !State.meReady;
   updateReadyTags();
   send({ type: 'READY', ready: State.meReady });
-  // iOSではユーザー操作の文脈でジャイロ許可を求める必要がある
-  if (State.meReady) requestMotionPermissionIfNeeded();
+  // ユーザー操作の文脈で AudioContext を起動 & iOSジャイロ許可
+  ensureAudio();
+  if (State.meReady){
+    requestMotionPermissionIfNeeded();
+    playSE('pickup');
+  }
   tryStartCountdown();
 });
 $('#leave-btn').addEventListener('click', ()=>{
@@ -947,13 +1022,16 @@ function startCountdown(){
   cd.textContent = String(n);
   cd.classList.remove('cd-go');
   if (countdownTimer) clearInterval(countdownTimer);
+  playSE('countdown');
   countdownTimer = setInterval(()=>{
     n -= 1;
     if (n > 0){
       cd.textContent = String(n);
+      playSE('countdown');
     } else if (n === 0){
       cd.textContent = 'GO!';
       cd.classList.add('cd-go');
+      playSE('start');
     } else {
       clearInterval(countdownTimer);
       countdownTimer = null;
@@ -1142,9 +1220,11 @@ function finalizeResult(){
   if (me > op){
     titleEl.textContent = 'WIN';
     titleEl.className = 'result-title win';
+    playSE('win');
   } else if (me < op){
     titleEl.textContent = 'LOSE';
     titleEl.className = 'result-title lose';
+    playSE('lose');
   } else {
     titleEl.textContent = 'DRAW';
     titleEl.className = 'result-title draw';
@@ -1450,6 +1530,7 @@ function checkCollisions(){
       // 距離カウントを止める仕様：updateDistance 側で無敵中はストップ
       // 障害物自体は残してOK（次フレームで通り過ぎる）
       try { navigator.vibrate && navigator.vibrate(80); } catch(e){}
+      playSE('hit');
       toast('衝突！1.5秒停止');
       return;
     }
@@ -1465,6 +1546,7 @@ function checkCollisions(){
       // 相手に妨害を送信
       sendHijack(it.kind);
       try { navigator.vibrate && navigator.vibrate(30); } catch(e){}
+      playSE('pickup');
       break;
     }
   }
@@ -1846,6 +1928,7 @@ function receiveHijack(kind){
     toast('被弾！視界泥棒');
   }
   updateDebuffTags();
+  playSE('hijack-recv');
   try { navigator.vibrate && navigator.vibrate([20, 40, 20]); } catch(e){}
 }
 
