@@ -851,6 +851,12 @@ $('#remote-id-input').addEventListener('input', (e)=>{
   // 数字のみ4桁
   e.target.value = e.target.value.replace(/\D/g,'').slice(0,4);
 });
+$('#remote-id-input').addEventListener('keydown', (e)=>{
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    $('#connect-btn').click();
+  }
+});
 
 $('#connect-btn').addEventListener('click', ()=>{
   const v = $('#remote-id-input').value.trim();
@@ -891,6 +897,8 @@ $('#ready-btn').addEventListener('click', ()=>{
   State.meReady = !State.meReady;
   updateReadyTags();
   send({ type: 'READY', ready: State.meReady });
+  // iOSではユーザー操作の文脈でジャイロ許可を求める必要がある
+  if (State.meReady) requestMotionPermissionIfNeeded();
   tryStartCountdown();
 });
 $('#leave-btn').addEventListener('click', ()=>{
@@ -1905,16 +1913,17 @@ window.addEventListener('keyup', (e)=>{
 });
 
 // gyro: deviceorientation -> gamma
-window.addEventListener('deviceorientation', (e)=>{
+function onDeviceOrientation(e){
   if (typeof e.gamma === 'number'){
     // -45..45 を -1..1 にマッピング（少し感度高め）
     const v = Math.max(-45, Math.min(45, e.gamma));
     Game.tilt = v / 30; // 30度で最大速度
   }
-}, true);
+}
+window.addEventListener('deviceorientation', onDeviceOrientation, true);
 
 // shake: devicemotion
-window.addEventListener('devicemotion', (e)=>{
+function onDeviceMotion(e){
   if (!Game.smokeActive) { Game.lastAcc = null; return; }
   const a = e.accelerationIncludingGravity;
   if (!a) return;
@@ -1936,18 +1945,31 @@ window.addEventListener('devicemotion', (e)=>{
     }
   }
   Game.lastAcc = cur;
-}, true);
+}
+window.addEventListener('devicemotion', onDeviceMotion, true);
 
-// iOS 13+ の許可リクエスト
+// iOS 13+ の許可リクエスト（ユーザー操作のコンテキストから呼ぶ必要あり）
+let motionPermissionRequested = false;
 function requestMotionPermissionIfNeeded(){
+  if (motionPermissionRequested) return;
+  motionPermissionRequested = true;
   try {
     if (typeof DeviceMotionEvent !== 'undefined' &&
         typeof DeviceMotionEvent.requestPermission === 'function'){
-      DeviceMotionEvent.requestPermission().catch(()=>{});
+      DeviceMotionEvent.requestPermission().then((res)=>{
+        if (res === 'granted'){
+          // 改めて確実にリスナーを再登録
+          window.addEventListener('devicemotion', onDeviceMotion, true);
+        }
+      }).catch(()=>{});
     }
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function'){
-      DeviceOrientationEvent.requestPermission().catch(()=>{});
+      DeviceOrientationEvent.requestPermission().then((res)=>{
+        if (res === 'granted'){
+          window.addEventListener('deviceorientation', onDeviceOrientation, true);
+        }
+      }).catch(()=>{});
     }
   } catch(e){}
 }
